@@ -175,9 +175,13 @@ void app.whenReady().then(async () => {
     ? new URL(`file://${path.join(here, "../dist/index.html")}`).href
     : "http://127.0.0.1:5173/";
   function trustedFrame(url: string) {
-    return app.isPackaged
-      ? url === trustedURL
-      : url.startsWith("http://127.0.0.1:5173/");
+    if (!app.isPackaged) return url.startsWith("http://127.0.0.1:5173/");
+    try {
+      const frame = new URL(url);
+      frame.search = "";
+      frame.hash = "";
+      return frame.href === trustedURL;
+    } catch { return false; }
   }
   session.defaultSession.setPermissionRequestHandler(
     (contents, permission, callback) =>
