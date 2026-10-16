@@ -54,7 +54,7 @@ function App() {
   const api = window.desktop;
   const [state, setState] = useState<State>("idle");
   const [settings, setSettings] = useState<SettingsStatus>();
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(new URLSearchParams(window.location.search).has("settings"));
   const [showHelp, setShowHelp] = useState(false);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [interim, setInterim] = useState("");
@@ -651,6 +651,12 @@ function SettingsDialog({
   saved: (settings: SettingsStatus) => void;
 }) {
   const [sonioxKey, setSoniox] = useState("");
+  const [role, setRole] = useState(settings?.role ?? "");
+  const [terms, setTerms] = useState(settings?.terms ?? "");
+  useEffect(() => {
+    setRole(settings?.role ?? "");
+    setTerms(settings?.terms ?? "");
+  }, [settings?.role, settings?.terms]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   async function submit(e: React.FormEvent) {
@@ -659,7 +665,7 @@ function SettingsDialog({
     setSaving(true);
     setError("");
     try {
-      saved(await api.saveSettings({ sonioxKey }));
+      saved(await api.saveSettings({ sonioxKey, role, terms }));
     } catch (err) {
       setError(microphoneError(err));
     } finally {
@@ -693,6 +699,16 @@ function SettingsDialog({
           <input autoFocus id="soniox" type="password" autoComplete="off"
             placeholder={settings?.soniox ? "留空保留已保存的密钥" : "用于韩语识别和中文实时翻译"}
             value={sonioxKey} onChange={(e) => setSoniox(e.target.value)} disabled={busy} />
+          <p className="modal-note">stt-rt-v5 · 韩语识别 → 中文 · one_way</p>
+          <label className="field-label" htmlFor="role">岗位 / 交流背景（可选）</label>
+          <textarea id="role" rows={2} maxLength={1000} value={role}
+            placeholder="例如：AI 产品经理面试，讨论项目经历和产品设计"
+            onChange={(e) => setRole(e.target.value)} disabled={busy} />
+          <label className="field-label" htmlFor="terms">专业术语（可选）</label>
+          <textarea id="terms" rows={3} maxLength={3000} value={terms}
+            placeholder="每行一个，或用逗号分隔，例如 RAG、Figma、프로덕트 매니저"
+            onChange={(e) => setTerms(e.target.value)} disabled={busy} />
+          <p className="modal-note">背景和术语会随开始翻译发送至 Soniox；留空也可使用。</p>
           <p className="modal-note">
             <ShieldCheck size={14} />
             密钥由系统安全存储加密，不会写入代码或字幕。

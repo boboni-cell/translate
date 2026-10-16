@@ -109,6 +109,16 @@ test("Electron opens with sandboxed preload and denies start without consent", a
     expect(result.error).toContain("请先确认对方同意");
     expect(result.nodeExposed).toBe(false);
     expect(result.settings).not.toHaveProperty("sonioxKey");
+    await page.getByRole("button", { name: "打开设置" }).click();
+    await page.getByLabel("Soniox API Key").fill("test-not-a-real-key");
+    await page.getByLabel("岗位 / 交流背景（可选）").fill("AI 产品经理");
+    await page.getByLabel("专业术语（可选）").fill("RAG，Figma");
+    await page.getByRole("button", { name: "保存设置" }).click();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+    await page.getByRole("button", { name: "打开设置" }).click();
+    await expect(page.getByLabel("Soniox API Key")).toHaveValue("");
+    await expect(page.getByLabel("岗位 / 交流背景（可选）")).toHaveValue("AI 产品经理");
+    await expect(page.getByLabel("专业术语（可选）")).toHaveValue("RAG，Figma");
     await page.screenshot({ path: "test-results/electron.png" });
   } finally {
     await app.close();

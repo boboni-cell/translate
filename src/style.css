@@ -857,7 +857,8 @@ footer > span {
   font-weight: 400;
 }
 .modal input:not([type="checkbox"]),
-.modal select {
+.modal select,
+.modal textarea {
   width: 100%;
   border: 1px solid #e1e4ed;
   background: #fafbfe;
@@ -866,7 +867,12 @@ footer > span {
   font-size: 11px;
   color: #667087;
 }
-.modal input::placeholder {
+.modal textarea {
+  resize: vertical;
+  font: inherit;
+}
+.modal input::placeholder,
+.modal textarea::placeholder {
   color: #b1b6c4;
 }
 .modal-note {

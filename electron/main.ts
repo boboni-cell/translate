@@ -12,12 +12,12 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { serviceError } from "./translation.js";
-import { SonioxTranscript, type SonioxResponse } from "./soniox.js";
+import { sonioxContext, SonioxTranscript, type SonioxResponse } from "./soniox.js";
 import type { Settings, SettingsStatus, SessionEvent } from "./types.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let window: BrowserWindow;
-let settings: Settings = { sonioxKey: "" };
+let settings: Settings = { sonioxKey: "", role: "", terms: "" };
 let socket: WebSocket | undefined;
 let keepAlive: ReturnType<typeof setInterval> | undefined;
 let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -32,6 +32,8 @@ const settingsPath = () =>
   path.join(app.getPath("userData"), "credentials.enc");
 const status = (): SettingsStatus => ({
   soniox: !!settings.sonioxKey,
+  role: settings.role,
+  terms: settings.terms,
   secureStorage: safeStorage.isEncryptionAvailable(),
 });
 function stopSocket() {
@@ -90,6 +92,7 @@ async function start(sampleRate: number, consent: boolean) {
         model: "stt-rt-v5", audio_format: "s16le", sample_rate: sampleRate,
         num_channels: 1, language_hints: ["ko"],
         translation: { type: "one_way", target_language: "zh" },
+        context: sonioxContext(settings.role, settings.terms),
       }));
       opened = true;
       active = true;
@@ -148,7 +151,7 @@ async function start(sampleRate: number, consent: boolean) {
 void app.whenReady().then(async () => {
   try {
     if (safeStorage.isEncryptionAvailable())
-      settings = { sonioxKey: "", ...JSON.parse(
+      settings = { sonioxKey: "", role: "", terms: "", ...JSON.parse(
         safeStorage.decryptString(await readFile(settingsPath())),
       ) };
   } catch {
@@ -212,10 +215,13 @@ void app.whenReady().then(async () => {
       throw new Error("系统安全存储不可用，无法保存密钥。");
     if (
       !input ||
-      typeof input.sonioxKey !== "string"
+      typeof input.sonioxKey !== "string" ||
+      typeof input.role !== "string" || typeof input.terms !== "string" ||
+      input.role.length > 1000 || input.terms.length > 3000
     )
       throw new Error("设置格式无效。");
-    const next = { sonioxKey: input.sonioxKey.trim() || settings.sonioxKey };
+    const next = { sonioxKey: input.sonioxKey.trim() || settings.sonioxKey,
+      role: input.role.trim(), terms: input.terms.trim() };
     await writeFile(
       settingsPath(),
       safeStorage.encryptString(JSON.stringify(next)),
@@ -255,6 +261,7 @@ void app.whenReady().then(async () => {
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", stopSocket);
   if (app.isPackaged)
-    await window.loadFile(path.join(here, "../dist/index.html"));
-  else await window.loadURL("http://127.0.0.1:5173/");
+    await window.loadFile(path.join(here, "../dist/index.html"),
+      process.argv.includes("--settings") ? { query: { settings: "1" } } : {});
+  else await window.loadURL("http://127.0.0.1:5173/" + (process.argv.includes("--settings") ? "?settings=1" : ""));
 });

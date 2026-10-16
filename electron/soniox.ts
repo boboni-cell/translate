@@ -25,3 +25,10 @@ export class SonioxTranscript {
     };
   }
 }
+
+export function sonioxContext(role: string, terms: string) {
+  return {
+    ...(role.trim() ? { general: [{ key: "topic", value: role.trim() }] } : {}),
+    ...(terms.trim() ? { terms: terms.split(/[\n,，]/).map((term) => term.trim()).filter(Boolean) } : {}),
+  };
+}

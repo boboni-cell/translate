@@ -1,5 +1,5 @@
-export interface Settings { sonioxKey: string; }
-export interface SettingsStatus { soniox: boolean; secureStorage: boolean; }
+export interface Settings { sonioxKey: string; role: string; terms: string; }
+export interface SettingsStatus { soniox: boolean; secureStorage: boolean; role: string; terms: string; }
 export type SessionEvent =
   | {
       type: "status";

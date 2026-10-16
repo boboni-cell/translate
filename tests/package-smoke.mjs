@@ -10,6 +10,7 @@ const app = await electron.launch({
   ),
   args: [
     `--user-data-dir=${profile}`,
+    "--settings",
     "--use-fake-device-for-media-stream",
     "--use-fake-ui-for-media-stream",
   ],
@@ -18,6 +19,8 @@ try {
   const page = await app.firstWindow();
   await page.getByRole("heading", { name: "让语言，不再是距离。" }).waitFor();
   assert.equal(new URL(page.url()).protocol, "file:");
+  await page.getByRole("dialog").waitFor();
+  await page.getByLabel("岗位 / 交流背景（可选）").waitFor();
   const result = await page.evaluate(async () => {
     const config = await window.desktop.settings();
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });

@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-在 [Soniox 控制台](https://console.soniox.com/) 创建具有实时语音识别权限的 API Key，填入应用「服务设置」。只需要一个密钥。服务费用由你的 Soniox 账户承担。
+在 [Soniox 控制台](https://console.soniox.com/) 创建具有实时语音识别权限的 API Key，填入应用「服务设置」。只需要一个密钥。可选填写岗位背景与专业术语（每行一个或逗号分隔），下次开始时会作为 Soniox context 发送。默认保持 `stt-rt-v5` 与 `one_way → zh`。服务费用由你的 Soniox 账户承担。
 
 选择麦克风、确认对方同意云端处理后点击开始。密钥通过 Electron safeStorage 加密保存在本机，不返回界面、不提交仓库；旧版 Deepgram / DeepL 密钥不会用于新连接。
 

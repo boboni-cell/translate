@@ -33,3 +33,12 @@ test("service failures provide safe actionable authentication, budget and rate e
   assert.match(serviceError(429, "Soniox"), /频繁/);
   assert.match(serviceError(500, "Soniox"), /暂时不可用/);
 });
+
+test("optional context maps role and comma/newline separated terminology to Soniox", async () => {
+  const { sonioxContext } = await import("../electron/soniox.js");
+  assert.deepEqual(sonioxContext("", ""), {});
+  assert.deepEqual(sonioxContext(" AI 产品经理 ", "RAG，Figma\n프로덕트 매니저, "), {
+    general: [{ key: "topic", value: "AI 产品经理" }],
+    terms: ["RAG", "Figma", "프로덕트 매니저"],
+  });
+});
