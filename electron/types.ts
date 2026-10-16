@@ -1,14 +1,5 @@
-export interface Settings {
-  deepgramKey: string;
-  deeplKey: string;
-  deeplPlan: "free" | "pro";
-}
-export interface SettingsStatus {
-  deepgram: boolean;
-  deepl: boolean;
-  deeplPlan: "free" | "pro";
-  secureStorage: boolean;
-}
+export interface Settings { sonioxKey: string; }
+export interface SettingsStatus { soniox: boolean; secureStorage: boolean; }
 export type SessionEvent =
   | {
       type: "status";
@@ -32,6 +23,5 @@ export interface DesktopAPI {
   audio: (frame: ArrayBuffer) => void;
   pause: () => Promise<void>;
   clear: () => Promise<void>;
-  retry: (id: string) => Promise<void>;
   onEvent: (listener: (event: SessionEvent) => void) => () => void;
 }

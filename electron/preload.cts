@@ -9,7 +9,6 @@ const api: DesktopAPI = {
   audio: (frame) => ipcRenderer.send("session:audio", frame),
   pause: () => ipcRenderer.invoke("session:pause"),
   clear: () => ipcRenderer.invoke("session:clear"),
-  retry: (id) => ipcRenderer.invoke("translation:retry", id),
   onEvent: (listener) => {
     const handler = (_: unknown, event: SessionEvent) => listener(event);
     ipcRenderer.on("session:event", handler);

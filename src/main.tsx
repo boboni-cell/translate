@@ -72,7 +72,7 @@ function App() {
   const scroll = useRef<HTMLDivElement>(null);
   const receiving = useRef(false);
   const busy = state === "connecting" || state === "listening";
-  const configured = settings?.deepgram && settings?.deepl;
+  const configured = settings?.soniox;
   const refreshDevices = async () => {
     try {
       setDevices(
@@ -104,7 +104,9 @@ function App() {
         }
       } else if (event.type === "interim") setInterim(event.text);
       else if (event.type === "segment")
-        setSegments((items) => [...items, { ...event }]);
+        setSegments((items) => items.some((item) => item.id === event.id)
+          ? items.map((item) => item.id === event.id ? { ...item, ...event } : item)
+          : [...items, { ...event }]);
       else if (event.type === "translation")
         setSegments((items) =>
           items.map((item) =>
@@ -428,25 +430,6 @@ function App() {
                       <div className="translated">
                         {segment.translation ? (
                           <p>{segment.translation}</p>
-                        ) : segment.error ? (
-                          <div className="translation-error">
-                            <span>{segment.error}</span>
-                            <button
-                              onClick={() => {
-                                setSegments((items) =>
-                                  items.map((s) =>
-                                    s.id === segment.id
-                                      ? { ...s, error: undefined }
-                                      : s,
-                                  ),
-                                );
-                                void api?.retry(segment.id);
-                              }}
-                            >
-                              <RefreshCw size={12} />
-                              重试翻译
-                            </button>
-                          </div>
                         ) : (
                           <div className="translating">
                             <span className="loading-dots">•••</span>正在翻译
@@ -468,7 +451,7 @@ function App() {
                         </p>
                       </div>
                       <div className="translated">
-                        <span className="interim-hint">语句稳定后自动翻译</span>
+                        <span className="interim-hint">中文译文实时更新</span>
                       </div>
                     </div>
                   )}
@@ -482,7 +465,7 @@ function App() {
                   className={`small-dot ${state === "listening" ? "green" : ""}`}
                 />
                 {state === "listening"
-                  ? "持续收音中 · 稳定片段自动翻译"
+                  ? "持续收音中 · 双语字幕实时更新"
                   : "仅在开始后收音 · 字幕仅保留在本次窗口"}
               </span>
               <button
@@ -575,13 +558,11 @@ function App() {
           <footer>
             <span>
               <ShieldCheck size={13} />
-              音频发送至 Deepgram · 转写发送至 DeepL · 密钥加密保存在本机
+              音频发送至 Soniox · 识别与翻译同步处理 · 密钥加密保存在本机
             </span>
             <span>
               <Wifi size={13} />
-              {latency === undefined
-                ? "等待首次翻译"
-                : `最近翻译耗时 ${(latency / 1000).toFixed(1)}s`}
+              {latency === undefined ? "等待首次翻译" : "Soniox 实时双语字幕"}
             </span>
           </footer>
         </section>
@@ -618,8 +599,7 @@ function App() {
             <h2 id="help-title">开始前的三件小事</h2>
             <ol className="help-list">
               <li>
-                在「服务设置」中填写 Deepgram 和 DeepL API 密钥。DeepL
-                网页版订阅不能代替 API 账户。
+                在「服务设置」中填写 Soniox API 密钥，用于韩语识别和中文翻译。
               </li>
               <li>选择麦克风，获得对方对收音及云端处理的同意，再点击开始。</li>
               <li>
@@ -627,7 +607,7 @@ function App() {
               </li>
             </ol>
             <p className="modal-note">
-              暂停会停止收音和新请求；已上传的数据可能仍在服务端处理。未定稿语音不会保留。断网后点击继续，缺失语音不会补录。关闭窗口会清空全部字幕。翻译耗时不包含识别等待时间。
+              暂停会停止收音和新请求；已上传的数据可能仍在服务端处理。未定稿语音不会保留。断网后点击继续，缺失语音不会补录。关闭窗口会清空全部字幕。临时字幕可能修订；每次连接的原文与译文分别连续更新，不按句强行对齐。
             </p>
             <button className="primary full" onClick={() => setShowHelp(false)}>
               知道了
@@ -670,11 +650,7 @@ function SettingsDialog({
   close: () => void;
   saved: (settings: SettingsStatus) => void;
 }) {
-  const [deepgramKey, setDeepgram] = useState("");
-  const [deeplKey, setDeepl] = useState("");
-  const [plan, setPlan] = useState<"free" | "pro">(
-    settings?.deeplPlan ?? "free",
-  );
+  const [sonioxKey, setSoniox] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   async function submit(e: React.FormEvent) {
@@ -683,7 +659,7 @@ function SettingsDialog({
     setSaving(true);
     setError("");
     try {
-      saved(await api.saveSettings({ deepgramKey, deeplKey, deeplPlan: plan }));
+      saved(await api.saveSettings({ sonioxKey }));
     } catch (err) {
       setError(microphoneError(err));
     } finally {
@@ -711,63 +687,12 @@ function SettingsDialog({
         <h2 id="settings-title">连接翻译服务</h2>
         <p>使用你自己的 API 密钥，服务费用由对应账户承担。</p>
         <form onSubmit={(e) => void submit(e)}>
-          <label className="field-label" htmlFor="deepgram">
-            Deepgram API Key{" "}
-            {settings?.deepgram && (
-              <span>
-                <Check size={12} />
-                已保存
-              </span>
-            )}
+          <label className="field-label" htmlFor="soniox">
+            Soniox API Key {settings?.soniox && <span><Check size={12} />已保存</span>}
           </label>
-          <input
-            autoFocus
-            id="deepgram"
-            type="password"
-            autoComplete="off"
-            placeholder={
-              settings?.deepgram
-                ? "留空保留已保存的密钥"
-                : "用于韩语流式语音识别"
-            }
-            value={deepgramKey}
-            onChange={(e) => setDeepgram(e.target.value)}
-            disabled={busy}
-          />
-          <label className="field-label" htmlFor="deepl">
-            DeepL API Key{" "}
-            {settings?.deepl && (
-              <span>
-                <Check size={12} />
-                已保存
-              </span>
-            )}
-          </label>
-          <input
-            id="deepl"
-            type="password"
-            autoComplete="off"
-            placeholder={
-              settings?.deepl
-                ? "留空保留已保存的密钥"
-                : "用于韩语 → 简体中文翻译"
-            }
-            value={deeplKey}
-            onChange={(e) => setDeepl(e.target.value)}
-            disabled={busy}
-          />
-          <label className="field-label" htmlFor="plan">
-            DeepL API 账户
-          </label>
-          <select
-            id="plan"
-            value={plan}
-            onChange={(e) => setPlan(e.target.value as "free" | "pro")}
-            disabled={busy}
-          >
-            <option value="free">API Free</option>
-            <option value="pro">API Pro</option>
-          </select>
+          <input autoFocus id="soniox" type="password" autoComplete="off"
+            placeholder={settings?.soniox ? "留空保留已保存的密钥" : "用于韩语识别和中文实时翻译"}
+            value={sonioxKey} onChange={(e) => setSoniox(e.target.value)} disabled={busy} />
           <p className="modal-note">
             <ShieldCheck size={14} />
             密钥由系统安全存储加密，不会写入代码或字幕。
@@ -785,8 +710,7 @@ function SettingsDialog({
               !api ||
               busy ||
               saving ||
-              (!deepgramKey.trim() && !settings?.deepgram) ||
-              (!deeplKey.trim() && !settings?.deepl)
+              (!sonioxKey.trim() && !settings?.soniox)
             }
           >
             {saving ? "正在保存…" : "保存设置"}

@@ -11,29 +11,27 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
-import { TranslationQueue, translate, serviceError } from "./translation.js";
-import { TranscriptTracker, type RecognitionResult } from "./transcript.js";
+import { serviceError } from "./translation.js";
+import { SonioxTranscript, type SonioxResponse } from "./soniox.js";
 import type { Settings, SettingsStatus, SessionEvent } from "./types.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let window: BrowserWindow;
-let settings: Settings = { deepgramKey: "", deeplKey: "", deeplPlan: "free" };
+let settings: Settings = { sonioxKey: "" };
 let socket: WebSocket | undefined;
 let keepAlive: ReturnType<typeof setInterval> | undefined;
 let heartbeat: ReturnType<typeof setInterval> | undefined;
 let lastPong = 0;
 let active = false;
 let connectionGeneration = 0;
-let queue: TranslationQueue;
+
 const emit = (event: SessionEvent) => {
   if (!window.isDestroyed()) window.webContents.send("session:event", event);
 };
 const settingsPath = () =>
   path.join(app.getPath("userData"), "credentials.enc");
 const status = (): SettingsStatus => ({
-  deepgram: !!settings.deepgramKey,
-  deepl: !!settings.deeplKey,
-  deeplPlan: settings.deeplPlan,
+  soniox: !!settings.sonioxKey,
   secureStorage: safeStorage.isEncryptionAvailable(),
 });
 function stopSocket() {
@@ -47,13 +45,11 @@ function stopSocket() {
 }
 function pause() {
   stopSocket();
-  queue.pause();
   emit({ type: "interim", text: "" });
   emit({ type: "status", state: "paused" });
 }
 function fail(message: string) {
   stopSocket();
-  queue.pause();
   emit({ type: "interim", text: "" });
   emit({ type: "status", state: "error", message });
 }
@@ -61,8 +57,8 @@ async function start(sampleRate: number, consent: boolean) {
   if (consent !== true) throw new Error("请先确认对方同意收音及云端处理。");
   if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000)
     throw new Error("不支持的音频采样率。");
-  if (!settings.deepgramKey || !settings.deeplKey)
-    throw new Error("请先在设置中填写两个服务的 API 密钥。");
+  if (!settings.sonioxKey)
+    throw new Error("请先在设置中填写 Soniox API 密钥。");
   stopSocket();
   const generation = connectionGeneration;
   if (
@@ -74,22 +70,14 @@ async function start(sampleRate: number, consent: boolean) {
     );
   if (generation !== connectionGeneration) throw new Error("连接已取消。");
   emit({ type: "status", state: "connecting" });
-  const params = new URLSearchParams({
-    model: "nova-3",
-    language: "ko",
-    encoding: "linear16",
-    sample_rate: String(sampleRate),
-    channels: "1",
-    interim_results: "true",
-    smart_format: "true",
-    endpointing: "400",
-  });
-  const ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params}`, {
-    headers: { Authorization: `Token ${settings.deepgramKey}` },
+  const ws = new WebSocket("wss://stt-rt.soniox.com/transcribe-websocket", {
+    headers: { Authorization: `Bearer ${settings.sonioxKey}` },
     handshakeTimeout: 10_000,
   });
   socket = ws;
-  const tracker = new TranscriptTracker();
+  const tracker = new SonioxTranscript();
+  const id = randomUUID();
+  const timestamp = Date.now();
   return new Promise<void>((resolve, reject) => {
     let opened = false;
     ws.on("open", () => {
@@ -98,12 +86,17 @@ async function start(sampleRate: number, consent: boolean) {
         reject(new Error("连接已取消。"));
         return;
       }
+      ws.send(JSON.stringify({
+        model: "stt-rt-v5", audio_format: "s16le", sample_rate: sampleRate,
+        num_channels: 1, language_hints: ["ko"],
+        translation: { type: "one_way", target_language: "zh" },
+      }));
       opened = true;
       active = true;
       lastPong = Date.now();
       keepAlive = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN)
-          ws.send(JSON.stringify({ type: "KeepAlive" }));
+          ws.send(JSON.stringify({ type: "keepalive" }));
       }, 4000);
       heartbeat = setInterval(() => {
         if (Date.now() - lastPong > 15_000) {
@@ -120,35 +113,19 @@ async function start(sampleRate: number, consent: boolean) {
     });
     ws.on("message", (data) => {
       if (!active || socket !== ws) return;
-      let result: RecognitionResult;
-      try {
-        result = JSON.parse(data.toString());
-      } catch {
+      let result: SonioxResponse;
+      try { result = JSON.parse(data.toString()); } catch { return; }
+      if (result.error_code) {
+        fail(serviceError(result.error_code, "Soniox"));
         return;
       }
-      if (result.type === "Error") {
-        fail("语音识别服务返回错误，请检查账户或重试。");
-        return;
-      }
-      const segment = tracker.accept(result);
-      if (!segment) return;
-      if (!segment.final) {
-        emit({ type: "interim", text: segment.text });
-        return;
-      }
-      const id = randomUUID();
-      emit({ type: "interim", text: "" });
-      emit({
-        type: "segment",
-        id,
-        original: segment.text,
-        timestamp: Date.now(),
-        confidence: segment.confidence,
-      });
-      queue.add(id, segment.text);
+      if (!result.tokens?.length) return;
+      const text = tracker.accept(result);
+      emit({ type: "segment", id, original: text.original, timestamp, confidence: 1 });
+      emit({ type: "translation", id, text: text.translation, latency: 0 });
     });
     ws.on("unexpected-response", (_request, response) => {
-      const message = serviceError(response.statusCode ?? 500, "Deepgram");
+      const message = serviceError(response.statusCode ?? 500, "Soniox");
       response.resume();
       if (socket === ws) fail(message);
       reject(new Error(message));
@@ -171,27 +148,12 @@ async function start(sampleRate: number, consent: boolean) {
 void app.whenReady().then(async () => {
   try {
     if (safeStorage.isEncryptionAvailable())
-      settings = JSON.parse(
+      settings = { sonioxKey: "", ...JSON.parse(
         safeStorage.decryptString(await readFile(settingsPath())),
-      );
+      ) };
   } catch {
     /* First launch, or credentials unavailable: require settings again. */
   }
-  queue = new TranslationQueue(
-    (text, signal) =>
-      translate(text, settings.deeplKey, settings.deeplPlan, signal),
-    (id, text, latency) => emit({ type: "translation", id, text, latency }),
-    (id, message) =>
-      emit({
-        type: "translation-error",
-        id,
-        message: message.includes("abort")
-          ? "翻译已暂停，点击重试。"
-          : message.includes("Timeout") || message.includes("fetch failed")
-            ? "翻译超时或网络不可用，点击重试。"
-            : message,
-      }),
-  );
   window = new BrowserWindow({
     width: 1240,
     height: 850,
@@ -250,16 +212,10 @@ void app.whenReady().then(async () => {
       throw new Error("系统安全存储不可用，无法保存密钥。");
     if (
       !input ||
-      typeof input.deepgramKey !== "string" ||
-      typeof input.deeplKey !== "string" ||
-      !["free", "pro"].includes(input.deeplPlan)
+      typeof input.sonioxKey !== "string"
     )
       throw new Error("设置格式无效。");
-    const next = {
-      deepgramKey: input.deepgramKey.trim() || settings.deepgramKey,
-      deeplKey: input.deeplKey.trim() || settings.deeplKey,
-      deeplPlan: input.deeplPlan,
-    };
+    const next = { sonioxKey: input.sonioxKey.trim() || settings.sonioxKey };
     await writeFile(
       settingsPath(),
       safeStorage.encryptString(JSON.stringify(next)),
@@ -272,11 +228,8 @@ void app.whenReady().then(async () => {
   handle("session:pause", pause);
   handle("session:clear", () => {
     pause();
-    queue.reset();
   });
-  handle("translation:retry", (id: string) => {
-    if (typeof id === "string") queue.retry(id);
-  });
+
   ipcMain.on("session:audio", (event, frame: unknown) => {
     if (
       event.sender.id !== window.webContents.id ||
@@ -298,7 +251,6 @@ void app.whenReady().then(async () => {
   });
   window.on("closed", () => {
     stopSocket();
-    queue.reset();
   });
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", stopSocket);

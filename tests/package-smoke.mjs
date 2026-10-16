@@ -37,7 +37,7 @@ try {
     processor.disconnect();
     await context.close();
     return {
-      configured: typeof config.deepgram === "boolean",
+      configured: typeof config.soniox === "boolean",
       frames,
       allEnded: stream
         .getTracks()

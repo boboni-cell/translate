@@ -21,7 +21,7 @@ test("browser preview is explicit and service settings never start recording", a
   await page.screenshot({ path: "test-results/workspace.png" });
 });
 
-test("subtitle IDs preserve pairing, translation errors retry, clear discards the session", async ({
+test("stream updates retain one row and clear discards the session", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -30,9 +30,7 @@ test("subtitle IDs preserve pairing, translation errors retry, clear discards th
       testEmit: (event: unknown) => listener(event),
       desktop: {
         settings: async () => ({
-          deepgram: true,
-          deepl: true,
-          deeplPlan: "free",
+          soniox: true,
           secureStorage: true,
         }),
         onEvent: (fn: typeof listener) => {
@@ -41,8 +39,6 @@ test("subtitle IDs preserve pairing, translation errors retry, clear discards th
         },
         pause: async () => listener({ type: "status", state: "paused" }),
         clear: async () => {},
-        retry: async (id: string) =>
-          listener({ type: "translation", id, text: "重试成功", latency: 80 }),
       },
     });
   });
@@ -64,15 +60,16 @@ test("subtitle IDs preserve pairing, translation errors retry, clear discards th
       confidence: 0.6,
     });
     emit({ type: "translation", id: "b", text: "谢谢。", latency: 100 });
-    emit({ type: "translation-error", id: "a", message: "网络不可用" });
+    emit({ type: "translation", id: "a", text: "你好。", latency: 0 });
+    emit({ type: "segment", id: "a", original: "안녕하세요. 반갑습니다.", timestamp: Date.now(), confidence: 0.95 });
   });
   const rows = page.locator(".transcript-row");
-  await expect(rows.nth(0)).toContainText("网络不可用");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("你好。");
+  await expect(rows.nth(0)).toContainText("반갑습니다.");
   await expect(rows.nth(1)).toContainText("감사합니다.");
   await expect(rows.nth(1)).toContainText("谢谢。");
   await expect(rows.nth(1)).toContainText("识别待确认");
-  await page.getByRole("button", { name: "重试翻译" }).click();
-  await expect(rows.nth(0)).toContainText("重试成功");
   await page.screenshot({ path: "test-results/subtitles.png" });
   await page.getByRole("button", { name: "清除字幕", exact: true }).click();
   await page
@@ -111,7 +108,7 @@ test("Electron opens with sandboxed preload and denies start without consent", a
     });
     expect(result.error).toContain("请先确认对方同意");
     expect(result.nodeExposed).toBe(false);
-    expect(result.settings).not.toHaveProperty("deepgramKey");
+    expect(result.settings).not.toHaveProperty("sonioxKey");
     await page.screenshot({ path: "test-results/electron.png" });
   } finally {
     await app.close();
