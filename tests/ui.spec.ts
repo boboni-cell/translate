@@ -70,6 +70,13 @@ test("stream updates retain one row and clear discards the session", async ({
   await expect(rows.nth(1)).toContainText("감사합니다.");
   await expect(rows.nth(1)).toContainText("谢谢。");
   await expect(rows.nth(1)).toContainText("识别待确认");
+  await page.getByLabel("翻译方向").selectOption("zh");
+  await expect(page.locator(".column-head")).toContainText("中文原文");
+  await expect(page.locator(".column-head")).toContainText("韩语翻译");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("韩 → 中");
+  await page.getByLabel("翻译方向").selectOption("ko");
+  await expect(page.locator(".column-head")).toContainText("韩语原文");
   await page.screenshot({ path: "test-results/subtitles.png" });
   await page.getByRole("button", { name: "清除字幕", exact: true }).click();
   await page

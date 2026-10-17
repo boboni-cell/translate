@@ -32,3 +32,11 @@ export function sonioxContext(role: string, terms: string) {
     ...(terms.trim() ? { terms: terms.split(/[\n,，]/).map((term) => term.trim()).filter(Boolean) } : {}),
   };
 }
+
+export function sonioxConfig(sampleRate: number, sourceLanguage: "ko" | "zh") {
+  return {
+    model: "stt-rt-v5", audio_format: "s16le", sample_rate: sampleRate,
+    num_channels: 1, language_hints: [sourceLanguage],
+    translation: { type: "one_way", target_language: sourceLanguage === "ko" ? "zh" : "ko" },
+  };
+}

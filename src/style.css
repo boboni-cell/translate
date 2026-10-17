@@ -1071,3 +1071,12 @@ footer > span {
   margin-top: 7px;
   padding: 2px;
 }
+
+.language-direction select {
+  border: 1px solid #e1e4ed;
+  border-radius: 7px;
+  padding: 9px 12px;
+  background: #fafbfe;
+  color: #323a4c;
+  font: inherit;
+}

@@ -38,6 +38,7 @@ type Segment = {
   original: string;
   timestamp: number;
   confidence: number;
+  sourceLanguage?: "ko" | "zh";
   translation?: string;
   error?: string;
   latency?: number;
@@ -52,6 +53,8 @@ const labels: Record<State, string> = {
 };
 function App() {
   const api = window.desktop;
+  const [sourceLanguage, setSourceLanguage] = useState<"ko" | "zh">("ko");
+  const koreanSource = sourceLanguage === "ko";
   const [state, setState] = useState<State>("idle");
   const [settings, setSettings] = useState<SettingsStatus>();
   const [showSettings, setShowSettings] = useState(new URLSearchParams(window.location.search).has("settings"));
@@ -194,7 +197,7 @@ function App() {
       const rate = await mic.prepare(device);
       if (current !== generation.current) return;
       await refreshDevices();
-      await api.start(rate, consent);
+      await api.start(rate, consent, sourceLanguage);
       if (current !== generation.current) {
         mic.stop();
         return;
@@ -294,7 +297,7 @@ function App() {
               <h1>
                 让语言，不再是距离<span>。</span>
               </h1>
-              <p>专注交流，韩语原文与中文翻译会在这里同步呈现。</p>
+              <p>专注交流，原文与译文会在这里同步呈现。</p>
             </div>
             <div className={`status-pill ${state}`}>
               <span />
@@ -318,13 +321,16 @@ function App() {
           )}
           <div className="session-toolbar">
             <div className="language-direction">
-              <span className="flag">한</span>
-              <strong>韩语</strong>
-              <span className="language-code">KO</span>
-              <ArrowRight size={15} />
-              <span className="flag chinese">中</span>
-              <strong>简体中文</strong>
-              <span className="language-code">ZH</span>
+              <label htmlFor="direction">翻译方向</label>
+              <select id="direction" value={sourceLanguage}
+                onChange={async (event) => {
+                  const next = event.target.value as "ko" | "zh";
+                  await pause();
+                  setSourceLanguage(next);
+                }}>
+                <option value="ko">韩语 → 简体中文</option>
+                <option value="zh">中文 → 韩语</option>
+              </select>
             </div>
             <div className="session-tools">
               <span className="timer">
@@ -345,11 +351,11 @@ function App() {
             <div className="column-head">
               <div>
                 <span className="column-dot" />
-                韩语原文 <span>KOREAN</span>
+                {koreanSource ? "韩语原文" : "中文原文"} <span>{koreanSource ? "KOREAN" : "CHINESE"}</span>
               </div>
               <div>
                 <span className="column-dot blue" />
-                中文翻译 <span>CHINESE</span>
+                {koreanSource ? "中文翻译" : "韩语翻译"} <span>{koreanSource ? "CHINESE" : "KOREAN"}</span>
               </div>
             </div>
             <div
@@ -379,7 +385,7 @@ function App() {
                   </h2>
                   <p>
                     {configured
-                      ? "点击下方「开始翻译」，说出的韩语将自动转为中文。"
+                      ? `点击下方「开始翻译」，${koreanSource ? "韩语将自动转为中文" : "中文将自动转为韩语"}。`
                       : "连接语音与翻译服务，开启你的实时韩中翻译。"}
                   </p>
                   <div className="empty-features">
@@ -414,7 +420,7 @@ function App() {
                     <div className="transcript-row" key={segment.id}>
                       <div className="original">
                         <div className="segment-meta">
-                          <span>{String(index + 1).padStart(2, "0")}</span>
+                          <span>{String(index + 1).padStart(2, "0")} · {segment.sourceLanguage === "zh" ? "中 → 韩" : "韩 → 中"}</span>
                           <time>
                             {new Date(segment.timestamp).toLocaleTimeString(
                               "zh-CN",
@@ -425,11 +431,11 @@ function App() {
                             <span className="uncertain">识别待确认</span>
                           )}
                         </div>
-                        <p lang="ko">{segment.original}</p>
+                        <p lang={segment.sourceLanguage ?? "ko"}>{segment.original}</p>
                       </div>
                       <div className="translated">
                         {segment.translation ? (
-                          <p>{segment.translation}</p>
+                          <p lang={segment.sourceLanguage === "zh" ? "ko" : "zh"}>{segment.translation}</p>
                         ) : (
                           <div className="translating">
                             <span className="loading-dots">•••</span>正在翻译
@@ -445,13 +451,13 @@ function App() {
                           <span className="live-indicator" />
                           正在识别
                         </div>
-                        <p lang="ko">
+                        <p lang={sourceLanguage}>
                           {interim}
                           <span className="cursor" />
                         </p>
                       </div>
                       <div className="translated">
-                        <span className="interim-hint">中文译文实时更新</span>
+                        <span className="interim-hint">译文实时更新</span>
                       </div>
                     </div>
                   )}
@@ -599,11 +605,11 @@ function App() {
             <h2 id="help-title">开始前的三件小事</h2>
             <ol className="help-list">
               <li>
-                在「服务设置」中填写 Soniox API 密钥，用于韩语识别和中文翻译。
+                在「服务设置」中填写 Soniox API 密钥，用于韩中双向切换翻译。
               </li>
               <li>选择麦克风，获得对方对收音及云端处理的同意，再点击开始。</li>
               <li>
-                尽量轮流说话，将麦克风放在双方之间。暂不区分说话人，仅识别韩语。
+                尽量轮流说话，将麦克风放在双方之间。暂不区分说话人；开始前选择韩译中或中译韩，切换方向会暂停收音。
               </li>
             </ol>
             <p className="modal-note">
@@ -697,9 +703,9 @@ function SettingsDialog({
             Soniox API Key {settings?.soniox && <span><Check size={12} />已保存</span>}
           </label>
           <input autoFocus id="soniox" type="password" autoComplete="off"
-            placeholder={settings?.soniox ? "留空保留已保存的密钥" : "用于韩语识别和中文实时翻译"}
+            placeholder={settings?.soniox ? "留空保留已保存的密钥" : "用于韩中实时识别与翻译"}
             value={sonioxKey} onChange={(e) => setSoniox(e.target.value)} disabled={busy} />
-          <p className="modal-note">stt-rt-v5 · 韩语识别 → 中文 · one_way</p>
+          <p className="modal-note">stt-rt-v5 · one_way · 翻译方向在主界面切换</p>
           <label className="field-label" htmlFor="role">岗位 / 交流背景（可选）</label>
           <textarea id="role" rows={2} maxLength={1000} value={role}
             placeholder="例如：AI 产品经理面试，讨论项目经历和产品设计"

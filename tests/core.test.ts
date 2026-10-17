@@ -42,3 +42,11 @@ test("optional context maps role and comma/newline separated terminology to Soni
     terms: ["RAG", "Figma", "프로덕트 매니저"],
   });
 });
+
+test("translation direction changes both recognition hints and translation target", async () => {
+  const { sonioxConfig } = await import("../electron/soniox.js");
+  assert.deepEqual(sonioxConfig(48000, "ko").language_hints, ["ko"]);
+  assert.equal(sonioxConfig(48000, "ko").translation.target_language, "zh");
+  assert.deepEqual(sonioxConfig(48000, "zh").language_hints, ["zh"]);
+  assert.equal(sonioxConfig(48000, "zh").translation.target_language, "ko");
+});

@@ -12,7 +12,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { serviceError } from "./translation.js";
-import { sonioxContext, SonioxTranscript, type SonioxResponse } from "./soniox.js";
+import { sonioxConfig, sonioxContext, SonioxTranscript, type SonioxResponse } from "./soniox.js";
 import type { Settings, SettingsStatus, SessionEvent } from "./types.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -55,7 +55,8 @@ function fail(message: string) {
   emit({ type: "interim", text: "" });
   emit({ type: "status", state: "error", message });
 }
-async function start(sampleRate: number, consent: boolean) {
+async function start(sampleRate: number, consent: boolean, sourceLanguage: "ko" | "zh" = "ko") {
+  if (sourceLanguage !== "ko" && sourceLanguage !== "zh") throw new Error("不支持的翻译方向。");
   if (consent !== true) throw new Error("请先确认对方同意收音及云端处理。");
   if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000)
     throw new Error("不支持的音频采样率。");
@@ -89,9 +90,7 @@ async function start(sampleRate: number, consent: boolean) {
         return;
       }
       ws.send(JSON.stringify({
-        model: "stt-rt-v5", audio_format: "s16le", sample_rate: sampleRate,
-        num_channels: 1, language_hints: ["ko"],
-        translation: { type: "one_way", target_language: "zh" },
+        ...sonioxConfig(sampleRate, sourceLanguage),
         context: sonioxContext(settings.role, settings.terms),
       }));
       opened = true;
@@ -124,7 +123,7 @@ async function start(sampleRate: number, consent: boolean) {
       }
       if (!result.tokens?.length) return;
       const text = tracker.accept(result);
-      emit({ type: "segment", id, original: text.original, timestamp, confidence: 1 });
+      emit({ type: "segment", id, original: text.original, timestamp, confidence: 1, sourceLanguage });
       emit({ type: "translation", id, text: text.translation, latency: 0 });
     });
     ws.on("unexpected-response", (_request, response) => {
