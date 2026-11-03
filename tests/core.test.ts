@@ -50,3 +50,25 @@ test("translation direction changes both recognition hints and translation targe
   assert.deepEqual(sonioxConfig(48000, "zh").language_hints, ["zh"]);
   assert.equal(sonioxConfig(48000, "zh").translation.target_language, "ko");
 });
+
+test("automatic two-way mode routes originals and delayed translations by language", async () => {
+  const { BilingualTranscript, sonioxConfig } = await import("../electron/soniox.js");
+  assert.deepEqual(sonioxConfig(48000, "auto").translation, { type: "two_way", language_a: "ko", language_b: "zh" });
+  assert.deepEqual(sonioxConfig(48000, "auto").language_hints, ["ko", "zh"]);
+  const tracker = new BilingualTranscript();
+  const first = tracker.accept({ tokens: [
+    { text: "안녕", language: "ko", is_final: true },
+    { text: "你好", language: "zh", translation_status: "translation", is_final: true },
+    { text: "谢谢", language: "zh", is_final: true },
+    { text: "감사", language: "ko", translation_status: "translation", is_final: false },
+  ] });
+  assert.deepEqual(first, [
+    { sourceLanguage: "ko", original: "안녕", translation: "你好" },
+    { sourceLanguage: "zh", original: "谢谢", translation: "감사" },
+  ]);
+  const next = tracker.accept({ tokens: [
+    { text: "감사합니다", language: "ko", source_language: "zh", translation_status: "translation", is_final: true },
+  ] });
+  assert.equal(next[0].original, "안녕");
+  assert.equal(next[1].translation, "감사합니다");
+});

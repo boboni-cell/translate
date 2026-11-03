@@ -53,7 +53,7 @@ const labels: Record<State, string> = {
 };
 function App() {
   const api = window.desktop;
-  const [sourceLanguage, setSourceLanguage] = useState<"ko" | "zh">("ko");
+  const [sourceLanguage, setSourceLanguage] = useState<"ko" | "zh" | "auto">("auto");
   const koreanSource = sourceLanguage === "ko";
   const [state, setState] = useState<State>("idle");
   const [settings, setSettings] = useState<SettingsStatus>();
@@ -353,10 +353,11 @@ function App() {
               <label htmlFor="direction">翻译方向</label>
               <select id="direction" value={sourceLanguage}
                 onChange={async (event) => {
-                  const next = event.target.value as "ko" | "zh";
+                  const next = event.target.value as "ko" | "zh" | "auto";
                   await pause();
                   setSourceLanguage(next);
                 }}>
+                <option value="auto">自动双向 · 中文 ⇄ 韩语</option>
                 <option value="ko">韩语 → 简体中文</option>
                 <option value="zh">中文 → 韩语</option>
               </select>
@@ -380,11 +381,11 @@ function App() {
             <div className="column-head">
               <div>
                 <span className="column-dot" />
-                {koreanSource ? "韩语原文" : "中文原文"} <span>{koreanSource ? "KOREAN" : "CHINESE"}</span>
+                {sourceLanguage === "auto" ? "原文 · 自动识别中韩" : koreanSource ? "韩语原文" : "中文原文"} <span>{sourceLanguage === "auto" ? "ORIGINAL" : koreanSource ? "KOREAN" : "CHINESE"}</span>
               </div>
               <div>
                 <span className="column-dot blue" />
-                {koreanSource ? "中文翻译" : "韩语翻译"} <span>{koreanSource ? "CHINESE" : "KOREAN"}</span>
+                {sourceLanguage === "auto" ? "译文 · 自动翻译为另一语言" : koreanSource ? "中文翻译" : "韩语翻译"} <span>{sourceLanguage === "auto" ? "TRANSLATION" : koreanSource ? "CHINESE" : "KOREAN"}</span>
               </div>
             </div>
             <div
@@ -414,7 +415,7 @@ function App() {
                   </h2>
                   <p>
                     {configured
-                      ? `点击下方「开始翻译」，${koreanSource ? "韩语将自动转为中文" : "中文将自动转为韩语"}。`
+                      ? `点击下方「开始翻译」，${sourceLanguage === "auto" ? "中韩语会自动互译，无需手动切换" : koreanSource ? "韩语将自动转为中文" : "中文将自动转为韩语"}。`
                       : "连接语音与翻译服务，开启你的实时韩中翻译。"}
                   </p>
                   <div className="empty-features">
@@ -654,7 +655,7 @@ function App() {
               </li>
               <li>选择麦克风，获得对方对收音及云端处理的同意，再点击开始。</li>
               <li>
-                尽量轮流说话，将麦克风放在双方之间。暂不区分说话人；开始前选择韩译中或中译韩，切换方向会暂停收音。
+                尽量轮流说话，将麦克风放在双方之间。暂不区分说话人；默认自动识别中韩语并互译，也可手动选择方向。每次连接按翻译方向分别显示连续文本，不代表逐轮对话。
               </li>
             </ol>
             <p className="modal-note">
@@ -750,7 +751,7 @@ function SettingsDialog({
           <input autoFocus id="soniox" type="password" autoComplete="off"
             placeholder={settings?.soniox ? "留空保留已保存的密钥" : "用于韩中实时识别与翻译"}
             value={sonioxKey} onChange={(e) => setSoniox(e.target.value)} disabled={busy} />
-          <p className="modal-note">stt-rt-v5 · one_way · 翻译方向在主界面切换</p>
+          <p className="modal-note">stt-rt-v5 · 默认自动双向中韩互译</p>
           <label className="field-label" htmlFor="role">岗位 / 交流背景（可选）</label>
           <textarea id="role" rows={2} maxLength={1000} value={role}
             placeholder="例如：AI 产品经理面试，讨论项目经历和产品设计"
