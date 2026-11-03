@@ -6,6 +6,8 @@ const api: DesktopAPI = {
     ipcRenderer.invoke("settings:save", settings),
   start: (sampleRate, consent, sourceLanguage) =>
     ipcRenderer.invoke("session:start", sampleRate, consent, sourceLanguage),
+  openRecords: () => ipcRenderer.invoke("records:open"),
+  archiveRecording: (data) => ipcRenderer.invoke("recording:archive", data),
   saveRecording: (data) => ipcRenderer.invoke("recording:save", data),
   audio: (frame) => ipcRenderer.send("session:audio", frame),
   pause: () => ipcRenderer.invoke("session:pause"),

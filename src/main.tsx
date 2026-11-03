@@ -228,9 +228,13 @@ function App() {
       receiving.current = true;
       if (recordEnabled) {
         const name = new Date().toLocaleString("zh-CN", { hour12: false });
-        mic.startRecording((blob) => setRecordings((items) => [...items, {
-          id: crypto.randomUUID(), blob, url: URL.createObjectURL(blob), name, saved: false,
-        }]));
+        mic.startRecording((blob) => {
+          const id = crypto.randomUUID();
+          setRecordings((items) => [...items, { id, blob, url: URL.createObjectURL(blob), name, saved: false }]);
+          void blob.arrayBuffer().then((data) => api.archiveRecording(data)).then(() => {
+            setRecordings((items) => items.map((item) => item.id === id ? { ...item, saved: true } : item));
+          }).catch(() => setError("录音自动保存失败，请使用「保存录音」手动保存。"));
+        });
       }
       await mic.resume();
     } catch (err) {
@@ -502,7 +506,7 @@ function App() {
                 />
                 {state === "listening"
                   ? "持续收音中 · 双语字幕实时更新"
-                  : "仅在开始后收音 · 字幕仅保留在本次窗口"}
+                  : "仅在开始后收音 · 字幕自动保存在本地"}
               </span>
               <button
                 onClick={() => {
@@ -579,9 +583,10 @@ function App() {
             </button>
           </div>
           <section className="recording-panel" aria-label="本地录音">
+            <button onClick={() => void api?.openRecords().then((message) => { if (message) setError(message); }).catch(() => setError("无法打开记录文件夹。"))}>打开本地记录</button>{" "}
             <label><input type="checkbox" checked={recordEnabled} disabled={busy}
               onChange={(event) => setRecordEnabled(event.target.checked)} /> 同时录音（本地）</label>
-            <span>{recordEnabled && state === "listening" ? "● 正在录音 · 暂停后可试听和保存" : "每次暂停生成一段录音；只录麦克风，不录系统声音"}</span>
+            <span>{recordEnabled && state === "listening" ? "● 正在录音 · 暂停后自动保存，可试听" : "字幕自动存本地；录音开启后每次暂停自动保存"}</span>
             {recordings.map((item) => <div className="recording-item" key={item.id}>
               <span>{item.name} · {(item.blob.size / 1024 / 1024).toFixed(1)} MB · {item.saved ? "已保存" : "未保存"}</span>
               <audio controls src={item.url} preload="metadata" />
@@ -659,7 +664,7 @@ function App() {
               </li>
             </ol>
             <p className="modal-note">
-              暂停会停止收音和新请求；已上传的数据可能仍在服务端处理。未定稿语音不会保留。断网后点击继续，缺失语音不会补录。关闭窗口会清空全部字幕。临时字幕可能修订；每次连接的原文与译文分别连续更新，不按句强行对齐。
+              暂停会停止收音和新请求；已上传的数据可能仍在服务端处理。未定稿语音不会保留。断网后点击继续，缺失语音不会补录。字幕自动保存在本地「文稿/听译记录」，关闭窗口不会删除历史文件。临时字幕可能修订；每次连接的原文与译文分别连续更新，不按句强行对齐。
             </p>
             <button className="primary full" onClick={() => setShowHelp(false)}>
               知道了
@@ -676,7 +681,7 @@ function App() {
             aria-labelledby="clear-title"
           >
             <h2 id="clear-title">清除本次字幕？</h2>
-            <p>收音会暂停，所有原文和译文将从本次窗口移除，无法恢复。</p>
+            <p>收音会暂停，原文和译文将从界面移除，本地历史文件仍然保留。</p>
             <div className="modal-actions">
               <button onClick={() => setConfirmClear(false)}>取消</button>
               <button className="danger" onClick={() => void clear()}>

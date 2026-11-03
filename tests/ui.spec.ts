@@ -126,6 +126,10 @@ test("Electron opens with sandboxed preload and denies start without consent", a
     await expect(page.getByLabel("Soniox API Key")).toHaveValue("");
     await expect(page.getByLabel("岗位 / 交流背景（可选）")).toHaveValue("AI 产品经理");
     await expect(page.getByLabel("专业术语（可选）")).toHaveValue("RAG，Figma");
+    await app.evaluate(({ app }, documents) => app.setPath("documents", documents), profile);
+    const archived = await page.evaluate(async () => window.desktop!.archiveRecording(new Uint8Array([26, 69, 223, 163]).buffer));
+    expect(archived).toContain(path.join(profile, "听译记录"));
+    expect([...await readFile(archived)]).toEqual([26, 69, 223, 163]);
     const recordingPath = path.join(profile, "recording.webm");
     await app.evaluate(({ dialog }, filePath) => {
       dialog.showSaveDialog = async () => ({ canceled: false, filePath });
@@ -196,6 +200,7 @@ test("local recording is opt-in, can be previewed and saved after pause", async 
       settings: async () => ({ soniox: true, secureStorage: true, role: "", terms: "" }),
       onEvent: (fn: typeof listener) => { listener = fn; return () => {}; },
       start: async () => listener({ type: "status", state: "listening" }), audio: () => {}, pause: async () => {}, clear: async () => {},
+      archiveRecording: async () => "saved.webm",
       saveRecording: async (data: ArrayBuffer) => data.byteLength > 0,
     } });
   });

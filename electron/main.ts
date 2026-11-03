@@ -6,8 +6,10 @@ import {
   safeStorage,
   systemPreferences,
   session,
+  shell,
 } from "electron";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdirSync, writeFileSync, renameSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -18,6 +20,14 @@ import type { Settings, SettingsStatus, SessionEvent } from "./types.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let window: BrowserWindow;
+if (!app.requestSingleInstanceLock()) app.exit(0);
+app.on("second-instance", () => {
+  if (window && !window.isDestroyed()) {
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
+  }
+});
 let settings: Settings = { sonioxKey: "", role: "", terms: "" };
 let socket: WebSocket | undefined;
 let keepAlive: ReturnType<typeof setInterval> | undefined;
@@ -26,7 +36,33 @@ let lastPong = 0;
 let active = false;
 let connectionGeneration = 0;
 
+let archiveId = randomUUID();
+const archivedSegments = new Map<string, Record<string, unknown>>();
+let archiveTimer: ReturnType<typeof setTimeout> | undefined;
+const recordsPath = () => path.join(app.getPath("documents"), "听译记录");
+function flushArchive() {
+  clearTimeout(archiveTimer);
+  archiveTimer = undefined;
+  if (!archivedSegments.size) return;
+  try {
+    mkdirSync(recordsPath(), { recursive: true, mode: 0o700 });
+    const destination = path.join(recordsPath(), `${archiveId}.json`);
+    writeFileSync(destination + ".tmp", JSON.stringify({ version: 1, segments: [...archivedSegments.values()] }, null, 2), { mode: 0o600 });
+    renameSync(destination + ".tmp", destination);
+  } catch {
+    if (window && !window.isDestroyed()) window.webContents.send("session:event", {
+      type: "status", state: active ? "listening" : "paused", message: "本地字幕保存失败，请检查磁盘空间和文件夹权限。",
+    });
+  }
+}
 const emit = (event: SessionEvent) => {
+  if (event.type === "segment" || event.type === "translation") {
+    const previous = archivedSegments.get(event.id) ?? {};
+    archivedSegments.set(event.id, { ...previous, ...(event.type === "segment"
+      ? { id: event.id, original: event.original, timestamp: event.timestamp, sourceLanguage: event.sourceLanguage }
+      : { translation: event.text }) });
+    if (!archiveTimer) archiveTimer = setTimeout(flushArchive, 1000);
+  }
   if (!window.isDestroyed()) window.webContents.send("session:event", event);
 };
 const settingsPath = () =>
@@ -48,6 +84,7 @@ function stopSocket() {
 }
 function pause() {
   stopSocket();
+  flushArchive();
   emit({ type: "interim", text: "" });
   emit({ type: "status", state: "paused" });
 }
@@ -227,6 +264,18 @@ void app.whenReady().then(async () => {
       return callback(...args);
     });
   }
+  handle("records:open", () => {
+    mkdirSync(recordsPath(), { recursive: true, mode: 0o700 });
+    return shell.openPath(recordsPath());
+  });
+  handle("recording:archive", async (data: unknown) => {
+    if (!(data instanceof ArrayBuffer) || !data.byteLength || data.byteLength > 256 * 1024 * 1024)
+      throw new Error("录音文件无效或超过 256 MB。");
+    await mkdir(recordsPath(), { recursive: true, mode: 0o700 });
+    const destination = path.join(recordsPath(), `录音-${Date.now()}-${randomUUID()}.webm`);
+    await writeFile(destination, Buffer.from(data), { mode: 0o600 });
+    return destination;
+  });
   handle("recording:save", async (data: unknown) => {
     if (!(data instanceof ArrayBuffer) || !data.byteLength || data.byteLength > 256 * 1024 * 1024)
       throw new Error("录音文件无效或超过 256 MB，请缩短单次录音。");
@@ -264,6 +313,8 @@ void app.whenReady().then(async () => {
   handle("session:pause", pause);
   handle("session:clear", () => {
     pause();
+    archivedSegments.clear();
+    archiveId = randomUUID();
   });
 
   ipcMain.on("session:audio", (event, frame: unknown) => {
@@ -287,9 +338,10 @@ void app.whenReady().then(async () => {
   });
   window.on("closed", () => {
     stopSocket();
+    flushArchive();
   });
   app.on("window-all-closed", () => app.quit());
-  app.on("before-quit", stopSocket);
+  app.on("before-quit", () => { stopSocket(); flushArchive(); });
   if (app.isPackaged)
     await window.loadFile(path.join(here, "../dist/index.html"),
       process.argv.includes("--settings") ? { query: { settings: "1" } } : {});
