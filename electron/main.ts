@@ -1,5 +1,6 @@
 import {
   app,
+  dialog,
   BrowserWindow,
   ipcMain,
   safeStorage,
@@ -197,6 +198,13 @@ void app.whenReady().then(async () => {
       trustedFrame(contents.getURL()) &&
       permission === "media",
   );
+  window.webContents.on("will-prevent-unload", (event) => {
+    const choice = dialog.showMessageBoxSync(window, {
+      type: "warning", buttons: ["返回保存", "放弃录音并关闭"], defaultId: 0, cancelId: 0,
+      message: "还有正在录制或未保存的录音", detail: "请先暂停翻译并保存录音，关闭后无法恢复。",
+    });
+    if (choice === 1) event.preventDefault();
+  });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {
     if (!trustedFrame(url)) event.preventDefault();
@@ -211,6 +219,17 @@ void app.whenReady().then(async () => {
       return callback(...args);
     });
   }
+  handle("recording:save", async (data: unknown) => {
+    if (!(data instanceof ArrayBuffer) || !data.byteLength || data.byteLength > 256 * 1024 * 1024)
+      throw new Error("录音文件无效或超过 256 MB，请缩短单次录音。");
+    const result = await dialog.showSaveDialog(window, {
+      title: "保存录音", defaultPath: `听译录音-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`,
+      filters: [{ name: "WebM 音频", extensions: ["webm"] }],
+    });
+    if (result.canceled || !result.filePath) return false;
+    await writeFile(result.filePath, Buffer.from(data), { mode: 0o600 });
+    return true;
+  });
   handle("settings:get", status);
   handle("settings:save", async (input: Settings) => {
     if (active || socket) throw new Error("请先暂停收音再修改设置。");

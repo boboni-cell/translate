@@ -1,7 +1,7 @@
 import { test, expect, _electron as electron } from "@playwright/test";
 import path from "node:path";
 import os from "node:os";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 
 test("browser preview is explicit and service settings never start recording", async ({
   page,
@@ -126,6 +126,17 @@ test("Electron opens with sandboxed preload and denies start without consent", a
     await expect(page.getByLabel("Soniox API Key")).toHaveValue("");
     await expect(page.getByLabel("岗位 / 交流背景（可选）")).toHaveValue("AI 产品经理");
     await expect(page.getByLabel("专业术语（可选）")).toHaveValue("RAG，Figma");
+    const recordingPath = path.join(profile, "recording.webm");
+    await app.evaluate(({ dialog }, filePath) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+    }, recordingPath);
+    const saved = await page.evaluate(async () => window.desktop!.saveRecording(new Uint8Array([26, 69, 223, 163]).buffer));
+    expect(saved).toBe(true);
+    expect([...await readFile(recordingPath)]).toEqual([26, 69, 223, 163]);
+    await app.evaluate(({ dialog }) => {
+      dialog.showSaveDialog = async () => ({ canceled: true, filePath: undefined });
+    });
+    expect(await page.evaluate(async () => window.desktop!.saveRecording(new Uint8Array([1]).buffer))).toBe(false);
     await page.screenshot({ path: "test-results/electron.png" });
   } finally {
     await app.close();
@@ -154,16 +165,54 @@ test("microphone produces PCM frames and stopping releases every track", async (
       () => {},
     );
     const rate = await mic.prepare("");
+    const recorded = new Promise<Blob>((resolve) => mic.startRecording(resolve));
     await mic.resume();
     await new Promise((resolve) => setTimeout(resolve, 600));
     mic.stop();
+    const blob = await recorded;
+    const decoded = new AudioContext();
+    const audio = await decoded.decodeAudioData(await blob.arrayBuffer());
+    const duration = audio.duration;
+    await decoded.close();
     const stoppedFrames = frames;
     await new Promise((resolve) => setTimeout(resolve, 200));
-    return { rate, frames, bytes, stoppedFrames, lastFrame };
+    return { rate, frames, bytes, stoppedFrames, lastFrame, recordingSize: blob.size, duration };
   });
   expect(result.rate).toBeGreaterThanOrEqual(8000);
   expect(result.frames).toBeGreaterThan(0);
   expect(result.bytes).toBe(result.frames * 8192);
   expect(result.frames).toBe(result.stoppedFrames);
+  expect(result.recordingSize).toBeGreaterThan(0);
+  expect(result.duration).toBeGreaterThan(0.3);
+  await context.close();
+});
+
+test("local recording is opt-in, can be previewed and saved after pause", async ({ browser }) => {
+  const context = await browser.newContext({ permissions: ["microphone"] });
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    let listener: (event: unknown) => void;
+    Object.assign(window, { desktop: {
+      settings: async () => ({ soniox: true, secureStorage: true, role: "", terms: "" }),
+      onEvent: (fn: typeof listener) => { listener = fn; return () => {}; },
+      start: async () => listener({ type: "status", state: "listening" }), audio: () => {}, pause: async () => {}, clear: async () => {},
+      saveRecording: async (data: ArrayBuffer) => data.byteLength > 0,
+    } });
+  });
+  await page.goto("/");
+  const recording = page.getByRole("checkbox", { name: "同时录音（本地）" });
+  await expect(recording).not.toBeChecked();
+  await recording.check();
+  await page.getByRole("checkbox", { name: /我已获得对方/ }).check();
+  await page.getByRole("button", { name: "开始翻译", exact: true }).click();
+  await expect(recording).toBeDisabled();
+  await expect.poll(() => page.locator(".recording-panel").textContent()).toContain("正在录音");
+  await page.waitForTimeout(600);
+  await page.getByRole("button", { name: "暂停翻译", exact: true }).click();
+  await expect(page.locator(".recording-item audio")).toBeVisible();
+  await page.getByRole("button", { name: "保存录音", exact: true }).click();
+  await expect(page.locator(".recording-item")).toContainText("已保存");
+  await page.getByRole("button", { name: "移除", exact: true }).click();
+  await expect(page.locator(".recording-item")).toHaveCount(0);
   await context.close();
 });

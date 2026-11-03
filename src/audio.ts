@@ -3,6 +3,7 @@ export class Microphone {
   private context?: AudioContext;
   private node?: AudioWorkletNode;
   private cancelled = false;
+  private recorder?: MediaRecorder;
   constructor(
     private send: (data: ArrayBuffer) => void,
     private level: (value: number) => void,
@@ -50,7 +51,22 @@ export class Microphone {
   async resume() {
     if (!this.cancelled) await this.context?.resume();
   }
+  startRecording(done: (blob: Blob) => void) {
+    if (!this.stream || this.cancelled) throw new Error("麦克风未就绪。");
+    const recorder = new MediaRecorder(this.stream, { mimeType: "audio/webm;codecs=opus" });
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data.size) chunks.push(event.data);
+    };
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: recorder.mimeType });
+      if (blob.size) done(blob);
+    };
+    recorder.start(1000);
+    this.recorder = recorder;
+  }
   stop() {
+    if (this.recorder && this.recorder.state !== "inactive") this.recorder.stop();
     this.cancelled = true;
     this.node?.disconnect();
     this.stream?.getTracks().forEach((track) => track.stop());

@@ -65,6 +65,9 @@ function App() {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [device, setDevice] = useState("");
   const [level, setLevel] = useState(0);
+  const [recordEnabled, setRecordEnabled] = useState(false);
+  const [recordings, setRecordings] = useState<{ id: string; blob: Blob; url: string; name: string; saved: boolean }[]>([]);
+  const [savingRecording, setSavingRecording] = useState("");
   const [consent, setConsent] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -76,6 +79,26 @@ function App() {
   const receiving = useRef(false);
   const busy = state === "connecting" || state === "listening";
   const configured = settings?.soniox;
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if ((recordEnabled && busy) || recordings.some((item) => !item.saved)) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [recordEnabled, busy, recordings]);
+  async function saveRecording(id: string, blob: Blob) {
+    if (!api) return;
+    setSavingRecording(id);
+    try {
+      if (await api.saveRecording(await blob.arrayBuffer()))
+        setRecordings((items) => items.map((item) => item.id === id ? { ...item, saved: true } : item));
+    } catch (error) { setError(microphoneError(error)); }
+    finally { setSavingRecording(""); }
+  }
+
   const refreshDevices = async () => {
     try {
       setDevices(
@@ -203,6 +226,12 @@ function App() {
         return;
       }
       receiving.current = true;
+      if (recordEnabled) {
+        const name = new Date().toLocaleString("zh-CN", { hour12: false });
+        mic.startRecording((blob) => setRecordings((items) => [...items, {
+          id: crypto.randomUUID(), blob, url: URL.createObjectURL(blob), name, saved: false,
+        }]));
+      }
       await mic.resume();
     } catch (err) {
       mic.stop();
@@ -279,7 +308,7 @@ function App() {
           <div className="header-right">
             <span className="local-badge">
               <ShieldCheck size={14} />
-              录音不落盘
+              {recordEnabled ? "本地录音已开启" : "录音未开启"}
             </span>
             <button
               className="icon-button"
@@ -401,7 +430,7 @@ function App() {
                     <i />
                     <span>
                       <ShieldCheck size={14} />
-                      不保存录音
+                      可选本地录音
                     </span>
                   </div>
                   {!configured && (
@@ -548,6 +577,22 @@ function App() {
                     : "开始翻译"}
             </button>
           </div>
+          <section className="recording-panel" aria-label="本地录音">
+            <label><input type="checkbox" checked={recordEnabled} disabled={busy}
+              onChange={(event) => setRecordEnabled(event.target.checked)} /> 同时录音（本地）</label>
+            <span>{recordEnabled && state === "listening" ? "● 正在录音 · 暂停后可试听和保存" : "每次暂停生成一段录音；只录麦克风，不录系统声音"}</span>
+            {recordings.map((item) => <div className="recording-item" key={item.id}>
+              <span>{item.name} · {(item.blob.size / 1024 / 1024).toFixed(1)} MB · {item.saved ? "已保存" : "未保存"}</span>
+              <audio controls src={item.url} preload="metadata" />
+              <button disabled={!!savingRecording} onClick={() => void saveRecording(item.id, item.blob)}>
+                {savingRecording === item.id ? "保存中…" : "保存录音"}</button>
+              <button onClick={() => {
+                if (!item.saved && !window.confirm("放弃这段未保存的录音？")) return;
+                URL.revokeObjectURL(item.url);
+                setRecordings((items) => items.filter((recording) => recording.id !== item.id));
+              }}>移除</button>
+            </div>)}
+          </section>
           <div className="consent-line">
             <label>
               <input
@@ -557,7 +602,7 @@ function App() {
                 onChange={(e) => setConsent(e.target.checked)}
               />
               <span>
-                我已获得对方同意，将音频和转写发送至云端服务进行处理。
+                我已获得对方对云端翻译处理及开启本地录音（若启用）的同意。
               </span>
             </label>
           </div>

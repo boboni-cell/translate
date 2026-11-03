@@ -21,6 +21,7 @@ export interface DesktopAPI {
   settings: () => Promise<SettingsStatus>;
   saveSettings: (settings: Settings) => Promise<SettingsStatus>;
   start: (sampleRate: number, consent: boolean, sourceLanguage?: "ko" | "zh") => Promise<void>;
+  saveRecording: (data: ArrayBuffer) => Promise<boolean>;
   audio: (frame: ArrayBuffer) => void;
   pause: () => Promise<void>;
   clear: () => Promise<void>;

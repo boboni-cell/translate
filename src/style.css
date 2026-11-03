@@ -1080,3 +1080,17 @@ footer > span {
   color: #323a4c;
   font: inherit;
 }
+
+.recording-panel {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid #e1e4ed;
+  border-radius: 12px;
+  background: white;
+  color: #667087;
+  font-size: 12px;
+}
+.recording-panel > span { margin-left: 16px; }
+.recording-item { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.recording-item audio { height: 32px; width: 240px; }
+.recording-item button { padding: 6px 10px; border: 1px solid #e1e4ed; border-radius: 6px; }
